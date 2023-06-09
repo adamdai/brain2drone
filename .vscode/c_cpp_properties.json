@@ -1,0 +1,22 @@
+{
+  "configurations": [
+    {
+      "browse": {
+        "databaseFilename": "${default}",
+        "limitSymbolsToIncludedHeaders": false
+      },
+      "includePath": [
+        "/home/adam/miniconda3/envs/ros/include/**",
+        "/home/adam/miniconda3/envs/ros/x86_64-conda-linux-gnu/sysroot/usr/include/**",
+        "/home/adam/NAVLAB/Brain2Drone/TrajBridge/src/bridge_px4/include/**",
+        "/usr/include/**"
+      ],
+      "name": "ROS",
+      "intelliSenseMode": "gcc-x64",
+      "compilerPath": "/usr/bin/gcc",
+      "cStandard": "gnu11",
+      "cppStandard": "c++14"
+    }
+  ],
+  "version": 4
+}
