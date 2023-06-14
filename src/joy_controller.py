@@ -6,7 +6,7 @@ import os
 import redis
 import copy
 
-from geometry_msgs.msg import PointStamped, QuaternionStamped, PoseStamped, Twist
+from geometry_msgs.msg import PointStamped, QuaternionStamped, PoseStamped, Twist, Vector3Stamped
 from sensor_msgs.msg import Joy
 
 
@@ -35,9 +35,9 @@ class JoyController:
         self.vel_cmd = np.zeros(3)
 
         # Publishers
-        self.pos_pub = rospy.Publisher("gcs/setpoint/position", PointStamped, queue_size=1)
-        self.att_pub = rospy.Publisher("gcs/setpoint/attitude", QuaternionStamped, queue_size=1)
-        self.vel_pub = rospy.Publisher("gcs/setpoint/velocity", Twist, queue_size=1)
+        self.pos_pub = rospy.Publisher("drone2/setpoint/position", PointStamped, queue_size=1)
+        self.att_pub = rospy.Publisher("drone2/setpoint/attitude", QuaternionStamped, queue_size=1)
+        self.vel_pub = rospy.Publisher("drone2/setpoint/velocity", Vector3Stamped, queue_size=1)
 
         # Subscribers
         mocap_sub = rospy.Subscriber("drone2/mavros/local_position/pose", PoseStamped, self.mocap_cb)
@@ -87,13 +87,8 @@ class JoyController:
         # 7: cross key down/up
 
         # Right stick - XY velocity command
-        self.vel_cmd[0] = -self.joy_axes[2]
-        self.vel_cmd[1] = self.joy_axes[3]
-        
-
-
-    def update_ref_pos(self, event=None):
-        self.ref_pos = copy.deepcopy(self.curr_pos)
+        self.vel_cmd[0] = -0.5 * self.joy_axes[2]
+        self.vel_cmd[1] = 0.5 * self.joy_axes[3]
 
 
     def run(self, event=None):
@@ -107,15 +102,16 @@ class JoyController:
         t_now = rospy.Time.now()
 
         # Variables to publish
-        vel_msg = Twist()
+        vel_msg = Vector3Stamped()
+        vel_msg.header.stamp = t_now
         if self.in_bounds():
-            vel_msg.linear.x = vx
-            vel_msg.linear.y = vy
-            vel_msg.linear.z = vz
+            vel_msg.vector.x = vx
+            vel_msg.vector.y = vy
+            vel_msg.vector.z = vz
         else:
-            vel_msg.linear.x = 0.0
-            vel_msg.linear.y = 0.0
-            vel_msg.linear.z = 0.0
+            vel_msg.vector.x = 0.0
+            vel_msg.vector.y = 0.0
+            vel_msg.vector.z = 0.0
 
         # Publish
         self.vel_pub.publish(vel_msg)
@@ -126,6 +122,5 @@ if __name__ == '__main__':
     jc = JoyController()
 
     rospy.Timer(rospy.Duration(jc.dt), jc.run)
-    rospy.Timer(rospy.Duration(jc.update_dt), jc.update_ref_pos)
     rospy.spin()
 

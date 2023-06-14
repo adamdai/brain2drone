@@ -50,8 +50,8 @@ class DecodeControllerTest:
         self.count = 0
 
         # Publishers
-        self.pos_pub = rospy.Publisher("gcs/setpoint/position", PointStamped, queue_size=1)
-        self.att_pub = rospy.Publisher("gcs/setpoint/attitude", QuaternionStamped, queue_size=1)
+        self.pos_pub = rospy.Publisher("drone2/setpoint/position", PointStamped, queue_size=1)
+        self.att_pub = rospy.Publisher("drone2/setpoint/attitude", QuaternionStamped, queue_size=1)
 
         # Subscribers
         mocap_sub = rospy.Subscriber("drone2/mavros/local_position/pose", PoseStamped, self.mocap_cb)
