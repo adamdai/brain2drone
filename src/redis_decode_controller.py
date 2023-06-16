@@ -1,44 +1,47 @@
 #!/usr/bin/env python3
 
 import rospy
+from typing import Tuple
 import numpy as np
-
-from geometry_msgs.msg import PointStamped, QuaternionStamped, PoseStamped, Twist, Vector3Stamped
-from sensor_msgs.msg import Joy
-
+from geometry_msgs.msg import Vector3Stamped, PoseStamped
+import os 
+import redis
+import copy
 
 # Parameters
 X_BOUNDS = [-3.0, 3.0]
 Y_BOUNDS = [-2.0, 2.0]
-Z_BOUNDS = [0.5, 1.5]
+Z_BOUNDS = [0.0, 1.5]
 
-RATE = 100    # hz 
+RATE = 20    # hz 
 DT = 1/RATE  # seconds
 
+"""
+Takeoff at origin (0, 0, 1)
 
-class JoyController:
+"""
+
+
+class RedisDecodeController:
     def __init__(self):
-        rospy.init_node('joy_controller_node', disable_signals=True)
+        rospy.init_node('redis_decode_controller_node', disable_signals=True)
         self.rate = rospy.Rate(RATE)  # GCS rate is 20 Hz
         self.dt = DT  # seconds
 
-        self.update_dt = 1.0  # seconds
-
-        print("Initializing joy controller")
+        print("starting Redis connection")
+        self.rc = redis.Redis(host='localhost', port=6379)
+        info = self.rc.xinfo_stream('drone:decode:stream')
+        self.newMsgId = info['first-entry'][0].decode('utf-8')
 
         self.curr_pos = np.array([0.0, 0.0, 1.0])
         self.curr_att = np.zeros(4)
 
-        self.vel_cmd = np.zeros(3)
-
         # Publishers
-        self.pos_pub = rospy.Publisher("drone2/setpoint/position", PointStamped, queue_size=1)
-        self.att_pub = rospy.Publisher("drone2/setpoint/attitude", QuaternionStamped, queue_size=1)
         self.vel_pub = rospy.Publisher("drone2/setpoint/velocity", Vector3Stamped, queue_size=1)
 
         # Subscribers
         mocap_sub = rospy.Subscriber("drone2/mavros/local_position/pose", PoseStamped, self.mocap_cb)
-        joy_sub = rospy.Subscriber("joy", Joy, self.joy_cb)
+
     
     def mocap_cb(self, data):
         # Unpack Data
@@ -51,54 +54,30 @@ class JoyController:
         self.curr_att[2] = data.pose.orientation.y
         self.curr_att[3] = data.pose.orientation.z
 
-
+    
     def in_bounds(self):
         return (self.curr_pos[0] >= X_BOUNDS[0] and self.curr_pos[0] <= X_BOUNDS[1] and
                 self.curr_pos[1] >= Y_BOUNDS[0] and self.curr_pos[1] <= Y_BOUNDS[1] and
                 self.curr_pos[2] >= Z_BOUNDS[0] and self.curr_pos[2] <= Z_BOUNDS[1])
 
 
-    def joy_cb(self, data):
-        # Unpack Data
-        self.joy_buttons = data.buttons
-        self.joy_axes = data.axes
-
-        # Buttons (0 if not pressed, 1 if pressed)
-        # 0: A
-        # 1: B
-        # 3: X
-        # 4: Y
-        # 6: LB
-        # 7: RB
-        # 13: button stick left
-        # 14: button stick right
-
-        # Axes (-1 to 1)
-        # 0: left stick right/left
-        # 1: left stick down/up
-        # 2: right stick right/left
-        # 3: right stick down/up
-        # 4: RT (1 if not pressed, -1 if pressed)
-        # 5: LT (1 if not pressed, -1 if pressed)
-        # 6: cross key right/left
-        # 7: cross key down/up
-
-        # Right stick - XY velocity command
-        self.vel_cmd[0] = -0.5 * self.joy_axes[2]
-        self.vel_cmd[1] = 0.5 * self.joy_axes[3]
-
-
     def run(self, event=None):
-
-        # Get velocity command
-        print(f"vel_cmd: {self.vel_cmd}")
-        vx = self.vel_cmd[0]
-        vy = self.vel_cmd[1]
-        vz = self.vel_cmd[2]
+        # Read off data from decoder outputs
+        stream = self.rc.xread({'drone:decode:stream': '$'}, count=1, block=1000)
+        # self.newMsgId = stream[0][1][0][0].decode('utf-8')
+        vx = stream[0][1][0][1][b'vel_x:float32']
+        vy = stream[0][1][0][1][b'vel_y:float32']
+        vz = stream[0][1][0][1][b'vel_z:float32']
+        vr = stream[0][1][0][1][b'vel_r:float32']
+        
+        vx = np.frombuffer(vx, dtype=np.float32)
+        vy = np.frombuffer(vy, dtype=np.float32)
+        vz = np.frombuffer(vz, dtype=np.float32)
+        vr = np.frombuffer(vr, dtype=np.float32)
+        print(f'{vx} {vy} {vz} {vr}')
 
         t_now = rospy.Time.now()
 
-        # Variables to publish
         vel_msg = Vector3Stamped()
         vel_msg.header.stamp = t_now
         if self.in_bounds():
@@ -116,8 +95,8 @@ class JoyController:
 
 if __name__ == '__main__':
     
-    jc = JoyController()
+    rdc = RedisDecodeController()
 
-    rospy.Timer(rospy.Duration(jc.dt), jc.run)
+    rospy.Timer(rospy.Duration(rdc.dt), rdc.run)
     rospy.spin()
 

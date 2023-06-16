@@ -5,7 +5,7 @@ import numpy as np
 import datetime
 
 print("connecting to server")
-r = redis.Redis(host='localhost', port=6379, db=0)
+r = redis.Redis(host='localhost', port=6379)
 
 def main():
     print("running main")
