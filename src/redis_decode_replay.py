@@ -22,25 +22,34 @@ Takeoff at origin (0, 0, 1)
 """
 
 
-class RedisDecodeController:
+class RedisDecodeReplay:
     def __init__(self):
-        rospy.init_node('redis_decode_controller_node', disable_signals=True)
+        rospy.init_node('redis_decode_offline_node', disable_signals=True)
         self.rate = rospy.Rate(RATE)  # GCS rate is 20 Hz
         self.dt = DT  # seconds 
 
+        self.tstart = 1687215526099
+        self.idx = self.tstart
+        self.tend = '1687216360188'
+
         print("starting Redis connection")
         self.rc = redis.Redis(host='localhost', port=6379)
-        info = self.rc.xinfo_stream('drone:decode:stream')
-        self.newMsgId = info['first-entry'][0].decode('utf-8')
+        # info = self.rc.xinfo_stream('drone:decode:stream')
+        # self.newMsgId = info['first-entry'][0].decode('utf-8')
 
         self.curr_pos = np.array([0.0, 0.0, 1.0])
         self.curr_att = np.zeros(4)
 
         # Publishers
         self.vel_pub = rospy.Publisher("drone2/setpoint/velocity", Vector3Stamped, queue_size=1)
+        self.bdr_pub = rospy.Publisher("drone2/setpoint/bodyrate", Vector3Stamped, queue_size=1)
 
         # Subscribers
         mocap_sub = rospy.Subscriber("drone2/mavros/local_position/pose", PoseStamped, self.mocap_cb)
+
+        self.log = []
+
+        rospy.on_shutdown(self.shutdown)
 
     
     def mocap_cb(self, data):
@@ -63,39 +72,53 @@ class RedisDecodeController:
 
     def run(self, event=None):
         # Read off data from decoder outputs
-        stream = self.rc.xread({'drone:decode:stream': '$'}, count=1, block=1000)
+        stream = self.rc.xread({'drone:stream': str(self.idx)}, count=1, block=1000)
+        self.idx += 50
         # self.newMsgId = stream[0][1][0][0].decode('utf-8')
-        vx = stream[0][1][0][1][b'vel_x:float32']
-        vy = stream[0][1][0][1][b'vel_y:float32']
-        vz = stream[0][1][0][1][b'vel_z:float32']
-        vr = stream[0][1][0][1][b'vel_r:float32']
-        
-        vx = np.frombuffer(vx, dtype=np.float32)
-        vy = np.frombuffer(vy, dtype=np.float32)
-        vz = np.frombuffer(vz, dtype=np.float32)
-        vr = np.frombuffer(vr, dtype=np.float32)
-        print(f'{vx} {vy} {vz} {vr}')
+        vel_bytes = stream[0][1][0][1][b'drone_latest_vel_mod:float32']
+        vel = np.frombuffer(vel_bytes, dtype=np.float32)
+        self.log.append(vel)
+
+        AIRSIM_MAX_VEL = 7.5
+        AIRSIM_MAX_YAWRATE = 7.5
+        FR_MAX_VEL = 1.0
+        FR_MAX_YAWRATE = 0.5
+        v_scale = FR_MAX_VEL / AIRSIM_MAX_VEL
+        r_scale = FR_MAX_YAWRATE / AIRSIM_MAX_YAWRATE
+        #print(v_scale * vel)
 
         t_now = rospy.Time.now()
 
         vel_msg = Vector3Stamped()
+        bdr_msg = Vector3Stamped()
         vel_msg.header.stamp = t_now
         if self.in_bounds():
-            vel_msg.vector.x = vx
-            vel_msg.vector.y = vy
-            vel_msg.vector.z = vz
+            vel_msg.vector.x = v_scale * vel[0]
+            vel_msg.vector.y = v_scale * vel[1]
+            vel_msg.vector.z = v_scale * vel[2]
+            bdr_msg.vector.z = r_scale * vel[3]
         else:
             vel_msg.vector.x = 0.0
             vel_msg.vector.y = 0.0
             vel_msg.vector.z = 0.0
+            bdr_msg.vector.z = 0.0
+
+        print(f"{vel_msg.vector.x:2f}, {vel_msg.vector.y:2f}, {vel_msg.vector.z:2f}, {bdr_msg.vector.z:2f}")
 
         # Publish
         self.vel_pub.publish(vel_msg)
+        self.bdr_pub.publish(bdr_msg)
+
+    
+    def shutdown(self):
+        print("Shutting down")
+        log = np.array(self.log)
+        np.save('log.npy', log)
 
 
 if __name__ == '__main__':
     
-    rdc = RedisDecodeController()
+    rdc = RedisDecodeReplay()
 
     rospy.Timer(rospy.Duration(rdc.dt), rdc.run)
     rospy.spin()

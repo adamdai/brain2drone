@@ -82,6 +82,7 @@ class JoyController:
         # 5: LT (1 if not pressed, -1 if pressed)
         # 6: cross key right/left
         # 7: cross key down/up
+        print(data.axes)
 
         # Right stick - XY velocity command
         self.vel_cmd[0] = -0.5 * self.joy_axes[2]
