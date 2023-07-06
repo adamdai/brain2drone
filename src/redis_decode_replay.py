@@ -29,8 +29,10 @@ class RedisDecodeReplay:
         self.dt = DT  # seconds 
 
         self.tstart = 1687215526099
-        self.idx = self.tstart
+        self.t_idx = self.tstart
         self.tend = '1687216360188'
+        self.loop_idx = 0
+        self.max_loop_idx = 100  # 100 * 50 ms = 5 s
 
         print("starting Redis connection")
         self.rc = redis.Redis(host='localhost', port=6379)
@@ -47,7 +49,8 @@ class RedisDecodeReplay:
         # Subscribers
         mocap_sub = rospy.Subscriber("drone2/mavros/local_position/pose", PoseStamped, self.mocap_cb)
 
-        self.log = []
+        self.vlog_raw = []
+        self.vlog_scaled = []
 
         rospy.on_shutdown(self.shutdown)
 
@@ -71,17 +74,22 @@ class RedisDecodeReplay:
 
 
     def run(self, event=None):
+        self.loop_idx += 1
+        if self.loop_idx > self.max_loop_idx:
+            rospy.signal_shutdown("Finished replaying data")
+            return
+
         # Read off data from decoder outputs
-        stream = self.rc.xread({'drone:stream': str(self.idx)}, count=1, block=1000)
-        self.idx += 50
+        stream = self.rc.xread({'drone:stream': str(self.t_idx)}, count=1, block=1000)
+        self.t_idx += 50
         # self.newMsgId = stream[0][1][0][0].decode('utf-8')
         vel_bytes = stream[0][1][0][1][b'drone_latest_vel_mod:float32']
         vel = np.frombuffer(vel_bytes, dtype=np.float32)
-        self.log.append(vel)
+        self.vlog_raw.append(vel)
 
         AIRSIM_MAX_VEL = 7.5
         AIRSIM_MAX_YAWRATE = 7.5
-        FR_MAX_VEL = 1.0
+        FR_MAX_VEL = 0.5
         FR_MAX_YAWRATE = 0.5
         v_scale = FR_MAX_VEL / AIRSIM_MAX_VEL
         r_scale = FR_MAX_YAWRATE / AIRSIM_MAX_YAWRATE
@@ -96,7 +104,8 @@ class RedisDecodeReplay:
             vel_msg.vector.x = v_scale * vel[0]
             vel_msg.vector.y = v_scale * vel[1]
             vel_msg.vector.z = v_scale * vel[2]
-            bdr_msg.vector.z = r_scale * vel[3]
+            #bdr_msg.vector.z = r_scale * vel[3]
+            bdr_msg.vector.z = 0.0
         else:
             vel_msg.vector.x = 0.0
             vel_msg.vector.y = 0.0
@@ -104,6 +113,7 @@ class RedisDecodeReplay:
             bdr_msg.vector.z = 0.0
 
         print(f"{vel_msg.vector.x:2f}, {vel_msg.vector.y:2f}, {vel_msg.vector.z:2f}, {bdr_msg.vector.z:2f}")
+        self.vlog_scaled.append([vel_msg.vector.x, vel_msg.vector.y, vel_msg.vector.z, bdr_msg.vector.z])
 
         # Publish
         self.vel_pub.publish(vel_msg)
@@ -112,8 +122,7 @@ class RedisDecodeReplay:
     
     def shutdown(self):
         print("Shutting down")
-        log = np.array(self.log)
-        np.save('log.npy', log)
+        np.savez('src/brain2drone/notebooks/log', raw=np.array(self.vlog_raw), scaled=np.array(self.vlog_scaled))
 
 
 if __name__ == '__main__':
