@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
 
+"""
+Subscribes to joystick and publishes velocity commands to drone
+
+"""
+
 import rospy
 import numpy as np
 

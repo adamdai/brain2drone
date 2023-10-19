@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
 
+"""
+Replays velocity commands from redis dump file and publishes to drone
+
+"""
+
+
+
 import rospy
 from typing import Tuple
 import numpy as np
@@ -28,14 +35,19 @@ class RedisDecodeReplay:
         self.rate = rospy.Rate(RATE)  # GCS rate is 20 Hz
         self.dt = DT  # seconds 
 
-        self.tstart = 1687215526099
+        self.tstart = 1689199189370 # exemplar
+        self.tend = '1689199359295' # exemplar
+
+        # self.tstart = 1687215526099
+        # self.tend = '1687216360188'
+
         self.t_idx = self.tstart
-        self.tend = '1687216360188'
         self.loop_idx = 0
-        self.max_loop_idx = 100  # 100 * 50 ms = 5 s
+        self.max_loop_idx = 300  # 100 * 50 ms = 5 s
 
         print("starting Redis connection")
-        self.rc = redis.Redis(host='localhost', port=6379)
+        self.rc = redis.Redis(host='localhost', port=6379, password='H9@zGz4!mKts')
+        print("ping: ", self.rc.ping())
         # info = self.rc.xinfo_stream('drone:decode:stream')
         # self.newMsgId = info['first-entry'][0].decode('utf-8')
 
@@ -87,7 +99,7 @@ class RedisDecodeReplay:
         vel = np.frombuffer(vel_bytes, dtype=np.float32)
         self.vlog_raw.append(vel)
 
-        AIRSIM_MAX_VEL = 7.5
+        AIRSIM_MAX_VEL = 8
         AIRSIM_MAX_YAWRATE = 7.5
         FR_MAX_VEL = 0.5
         FR_MAX_YAWRATE = 0.5
@@ -100,10 +112,14 @@ class RedisDecodeReplay:
         vel_msg = Vector3Stamped()
         bdr_msg = Vector3Stamped()
         vel_msg.header.stamp = t_now
+        bdr_msg.header.stamp = t_now
         if self.in_bounds():
-            vel_msg.vector.x = v_scale * vel[0]
-            vel_msg.vector.y = v_scale * vel[1]
-            vel_msg.vector.z = v_scale * vel[2]
+            # NOTE: switch x and y 
+            # vel_msg.vector.x = v_scale * vel[0]
+            # vel_msg.vector.y = v_scale * vel[1]
+            vel_msg.vector.x = v_scale * vel[1]
+            vel_msg.vector.y = v_scale * vel[0]
+            # vel_msg.vector.z = v_scale * vel[2]
             #bdr_msg.vector.z = r_scale * vel[3]
             bdr_msg.vector.z = 0.0
         else:
@@ -112,7 +128,7 @@ class RedisDecodeReplay:
             vel_msg.vector.z = 0.0
             bdr_msg.vector.z = 0.0
 
-        print(f"{vel_msg.vector.x:2f}, {vel_msg.vector.y:2f}, {vel_msg.vector.z:2f}, {bdr_msg.vector.z:2f}")
+        print(f"{self.loop_idx} / {self.max_loop_idx}: {vel_msg.vector.x:2f}, {vel_msg.vector.y:2f}, {vel_msg.vector.z:2f}")
         self.vlog_scaled.append([vel_msg.vector.x, vel_msg.vector.y, vel_msg.vector.z, bdr_msg.vector.z])
 
         # Publish

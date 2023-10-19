@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
 
+"""
+Subscribes to joystick and writes velocity commands to redis streams
+
+"""
+
 import rospy
 import numpy as np
 import os 
@@ -12,7 +17,7 @@ RATE = 20    # hz
 DT = 1/RATE  # seconds
 
 print("connecting to server")
-r = redis.Redis(host='localhost', port=6379)
+r = redis.Redis(host='localhost', port=6379, password='H9@zGz4!mKts')
 
 
 class JoyRedisPub:
@@ -21,7 +26,7 @@ class JoyRedisPub:
         self.rate = rospy.Rate(RATE)  
         self.dt = DT  # seconds
 
-        self.vel_cmd = np.zeros(3)
+        self.vel_cmd = np.zeros(4)
 
         print("Initializing joystick redis pub stream")
 
@@ -55,8 +60,12 @@ class JoyRedisPub:
         # 7: cross key down/up
 
         # Right stick - XY velocity command
-        self.vel_cmd[0] = -0.5 * self.joy_axes[2]
-        self.vel_cmd[1] = 0.5 * self.joy_axes[3]
+        self.vel_cmd[0] = -1.0 * self.joy_axes[2]
+        self.vel_cmd[1] = self.joy_axes[3]
+
+        # Left stick - Z velocity and yaw command
+        self.vel_cmd[2] = self.joy_axes[1]
+        self.vel_cmd[3] = self.joy_axes[0]
 
 
     def run(self, event=None):
@@ -66,7 +75,7 @@ class JoyRedisPub:
         vx = np.float32(self.vel_cmd[0])
         vy = np.float32(self.vel_cmd[1])
         vz = np.float32(self.vel_cmd[2])
-        vr = np.float32(0.0)
+        vr = np.float32(self.vel_cmd[3])
 
         t_now = rospy.Time.now()
 
