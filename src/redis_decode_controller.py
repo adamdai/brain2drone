@@ -11,20 +11,24 @@ Two modes: "AIRSIM" and "JOY"
 
 
 import rospy
-from typing import Tuple
 import numpy as np
-from geometry_msgs.msg import Vector3Stamped, PoseStamped
-import os 
 import redis
-import copy
 
-# Parameters
+from geometry_msgs.msg import Vector3Stamped, PoseStamped
+from scipy.spatial.transform import Rotation
+
+
+#%% =========== Parameters ========== ###
+
 DRONE_NAME = "drone1"
 
-JOY_CONTROL = True
+LOCAL_FRAME = True     # Whether decoded velocities are in local frame (as opposed to global)
+                       # mavros velocity setpoints are in global frame
+JOY_CONTROL = True     # Using joystick or decoder
 ENABLE_Z = True
 ENABLE_YAW = True
 
+# For flightroom
 X_BOUNDS = [-3.0, 6.0]
 Y_BOUNDS = [-1.5, 1.5]
 Z_BOUNDS = [0.0, 2.5]
@@ -33,10 +37,9 @@ Z_BOUNDS = [0.0, 2.5]
 MAX_VEL = 0.5  # m/s
 MAX_YAWRATE = 0.78  # rad/s (45 deg/s)
 
-# Scaling parameters
+# Scaling parameters (decoder outputs vs. joystick outputs)
 AIRSIM_MAX_VEL = 8  # m/s
 AIRSIM_MAX_YAWRATE = 20.0  # rad/s
-
 JOY_MAX_VEL = 1.0
 JOY_MAX_YAWRATE = 1.0
 
@@ -51,6 +54,8 @@ RATE = 20    # hz
 DT = 1/RATE  # seconds
 
 
+#%% =========== Helper Functions ========== ###
+
 def saturate(v: float, v_max: float) -> float:
     if v > v_max:
         return v_max
@@ -58,12 +63,18 @@ def saturate(v: float, v_max: float) -> float:
         return -v_max
     else:
         return v
+    
+
+def quat_to_R(q):
+    r = Rotation.from_quat(q)
+    return r.as_matrix()
 
 """
 Takeoff at origin (0, 0, 1)
 
 """
 
+#%% =========== Main Node ========== ###
 
 class RedisDecodeController:
     def __init__(self):
@@ -101,10 +112,10 @@ class RedisDecodeController:
         self.curr_pos[1] = data.pose.position.y
         self.curr_pos[2] = data.pose.position.z
 
-        self.curr_att[0] = data.pose.orientation.w
-        self.curr_att[1] = data.pose.orientation.x
-        self.curr_att[2] = data.pose.orientation.y
-        self.curr_att[3] = data.pose.orientation.z
+        self.curr_att[0] = data.pose.orientation.x
+        self.curr_att[1] = data.pose.orientation.y
+        self.curr_att[2] = data.pose.orientation.z
+        self.curr_att[3] = data.pose.orientation.w
 
     
     def in_bounds(self):
@@ -143,10 +154,23 @@ class RedisDecodeController:
 
         #print(f"Received vel: , {vx}, {vy}, {vz}, {vr}")
 
-        # Transform for live data
+        # Transform for live data: Live data is in AirSim coordinate frame (NED) 
+        # whereas joystick control is in flightroom frame (ENU)
         if not JOY_CONTROL:
             vx, vy = vy, -vx
             vz = -vz
+
+        # Local to global transform
+        if LOCAL_FRAME:
+            # Get pose rotation matrix (local to global)
+            R = quat_to_R(self.curr_att)
+
+            # Rotate xyz velocity command from local to global frame
+            vxyz_local = np.array([vx, vy, vz])
+            vxyz_global = R @ vxyz_local
+            vx = vxyz_global[0]
+            vy = vxyz_global[1]
+            vz = vxyz_global[2]
 
         # Scale and saturate
         vx = v_scale * vx
