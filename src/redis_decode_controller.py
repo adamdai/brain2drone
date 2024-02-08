@@ -141,6 +141,8 @@ class RedisDecodeController:
         vz = np.frombuffer(vz, dtype=np.float32)[0]
         vr = np.frombuffer(vr, dtype=np.float32)[0]
 
+        #print(f"Received vel: , {vx}, {vy}, {vz}, {vr}")
+
         # Transform for live data
         if not JOY_CONTROL:
             vx, vy = vy, -vx

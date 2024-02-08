@@ -52,16 +52,16 @@ class JoyRedisPub:
         # Axes (-1 to 1)
         # 0: left stick right/left
         # 1: left stick down/up
-        # 2: right stick right/left
-        # 3: right stick down/up
-        # 4: RT (1 if not pressed, -1 if pressed)
-        # 5: LT (1 if not pressed, -1 if pressed)
+        # 3: right stick right/left
+        # 4: right stick down/up
+        # 5: RT (1 if not pressed, -1 if pressed)
+        # 8: LT (0 if not pressed, 1 if pressed)
         # 6: cross key right/left
         # 7: cross key down/up
 
         # Right stick - XY velocity command
-        self.vel_cmd[0] = -1.0 * self.joy_axes[2]
-        self.vel_cmd[1] = self.joy_axes[3]
+        self.vel_cmd[0] = -1.0 * self.joy_axes[3]
+        self.vel_cmd[1] = self.joy_axes[4]
 
         # Left stick - Z velocity and yaw command
         self.vel_cmd[2] = self.joy_axes[1]
